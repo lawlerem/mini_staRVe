@@ -43,31 +43,57 @@ Type objective_function<Type>::operator() () {
   DATA_MATRIX(y);
 
   PARAMETER_MATRIX(working_response_pars);
-  // PARAMETER(rho);
+  PARAMETER(logit_rho);
+
+  int no = y.rows();
+  int nv = y.cols();
+
+  matrix<Type> y_std(no,nv);
 
   matrix<Type> response_pars = working_response_pars;
   response_pars.row(1) = exp(vector<Type>(working_response_pars.row(1))); // log_sd --> sd
 
-  int no = y.rows();
-  int nv = y.cols();
+  Type rho = 2*invlogit(logit_rho)-1;
+  matrix<Type> R(nv,nv);
+  R << 1, rho, rho, 1;
+  Type logdetR = atomic::logdet(R);
+  matrix<Type> Q = atomic::matinv(R);
+  matrix<Type> I(nv,nv); I.setIdentity();
+  MVNORM_t<Type> copula(R);
 
   Type nll = 0.0;
 
   for(int v=0; v<nv; v++) {
     for(int o=0; o<no; o++) {
       nll -= dnorm(y(o,v),response_pars(0,v),response_pars(1,v),true);
+      y_std(o,v) = (y(o,v) - response_pars(0,v)) / response_pars(1,v);
     }
   }
+
+  for(int o=0; o<no; o++) {
+    vector<Type> yrow = vector<Type>(y_std.row(o));
+    nll += Type(0.5)*logdetR + Type(0.5)*(yrow*vector<Type>(matrix<Type>(Q-I)*yrow)).sum();
+  }
+
   SIMULATE{
+    for(int o=0; o<no; o++) {
+      y_std.row(o) = copula.simulate();
+    }
     for(int v=0; v<nv; v++) {
       for(int o=0; o<no; o++) {
-        y(o,v) = rnorm(response_pars(0,v),response_pars(1,v));
+        y(o,v) = response_pars(1,v)*y_std(o,v)+response_pars(0,v);
       }
     }
     REPORT(y);
   }
 
   ADREPORT(response_pars);
+  ADREPORT(R);
+
+  REPORT(y_std);
+
+  REPORT(response_pars);
+  REPORT(R);
 
   return nll;
 }

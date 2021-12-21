@@ -11,8 +11,9 @@ simdat<- list(
 simpar<- list(
   working_response_pars = cbind(
     c(5,log(3)),
-    c(-10,log(20))
-  )
+    c(-10,log(2))
+  ),
+  logit_rho = qlogis(0.5*(c(0.9)+1))
 )
 
 simobj<- MakeADFun(
@@ -23,14 +24,19 @@ simobj<- MakeADFun(
 )
 
 sim<- simobj$simulate()
-
+plot(as.data.frame(sim$y))
+cor(as.data.frame(sim$y))
 
 fitobj<- MakeADFun(
   data = list(
     y = sim$y
   ),
   para = list(
-    working_response_pars = matrix(0,nrow=2,ncol=nv)
+    working_response_pars = cbind(
+      c(0,0),
+      c(0,0)
+    ),
+    logit_rho = qlogis(0.5*(c(0)+1))
   ),
   DLL = "copula_tests",
   silent = TRUE
@@ -41,8 +47,8 @@ fitopt<- nlminb(
   fitobj$gr
 )
 fitsdr<- sdreport(fitobj)
-fitsdr<- list(
+(fitsdr<- list(
   Estimate = as.list(fitsdr,"Est",TRUE),
   StdError = as.list(fitsdr,"Std",TRUE)
-)
-fitcheck<- checkConsistency(fitobj)
+))
+(fitcheck<- checkConsistency(fitobj))
