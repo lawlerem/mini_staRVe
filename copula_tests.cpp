@@ -41,17 +41,23 @@ matrix<Type> spd_sqrt(matrix<Type> x){
 template<class Type>
 Type objective_function<Type>::operator() () {
   DATA_MATRIX(y);
+  DATA_IVECTOR(y_level);
 
-  PARAMETER_MATRIX(working_response_pars);
+  PARAMETER_MATRIX(w); // [level,var]
+  PARAMETER_MATRIX(working_response_pars); // [par,var]
+  PARAMETER_MATRIX(working_w_pars) // [par,var]
   PARAMETER(logit_rho);
 
-  int no = y.rows();
-  int nv = y.cols();
-
-  matrix<Type> y_std(no,nv);
+  int nob = y.rows(); // # of observations
+  int nv = y.cols(); // # of vars
+  int nl = w.rows(); // # of levels
 
   matrix<Type> response_pars = working_response_pars;
   response_pars.row(1) = exp(vector<Type>(working_response_pars.row(1))); // log_sd --> sd
+
+  matrix<Type> w_std(nl,nv);
+  matrix<Type> w_pars = working_w_pars;
+  w_pars.row(0) = exp(vector<Type>(working_w_pars.row(0))); // log_sd --> sd
 
   Type rho = 2*invlogit(logit_rho)-1;
   matrix<Type> R(nv,nv);
@@ -61,36 +67,45 @@ Type objective_function<Type>::operator() () {
   matrix<Type> I(nv,nv); I.setIdentity();
   MVNORM_t<Type> copula(R);
 
+
+
+
   Type nll = 0.0;
 
   for(int v=0; v<nv; v++) {
-    for(int o=0; o<no; o++) {
-      nll -= dnorm(y(o,v),response_pars(0,v),response_pars(1,v),true);
-      y_std(o,v) = (y(o,v) - response_pars(0,v)) / response_pars(1,v);
+    for(int ob=0; ob<nob; ob++) {
+      nll -= dnorm(y(ob,v),response_pars(0,v)+w(y_level(ob),v),response_pars(1,v),true);
+    }
+    for(int l=0; l<nl; l++) {
+      nll -= dnorm(w(l,v),Type(0.0),w_pars(0,v),true);
+      w_std(l,v) = (w(l,v) - Type(0.0)) / w_pars(0,v);
     }
   }
 
-  for(int o=0; o<no; o++) {
-    vector<Type> yrow = vector<Type>(y_std.row(o));
-    nll += Type(0.5)*logdetR + Type(0.5)*(yrow*vector<Type>(matrix<Type>(Q-I)*yrow)).sum();
+  for(int l=0; l<nl; l++) {
+    vector<Type> wrow = vector<Type>(w_std.row(l));
+    nll += Type(0.5)*logdetR + Type(0.5)*(wrow*vector<Type>(matrix<Type>(Q-I)*wrow)).sum();
   }
 
   SIMULATE{
-    for(int o=0; o<no; o++) {
-      y_std.row(o) = copula.simulate();
+    for(int l=0; l<nl; l++) {
+      w_std.row(l) = copula.simulate();
     }
     for(int v=0; v<nv; v++) {
-      for(int o=0; o<no; o++) {
-        y(o,v) = response_pars(1,v)*y_std(o,v)+response_pars(0,v);
+      for(int l=0; l<nl; l++) {
+        w(l,v) = w_pars(0,v)*w_std(l,v) + Type(0.0);
+      }
+      for(int ob=0; ob<nob; ob++) {
+        y(ob,v) = rnorm(response_pars(0,v)+w(y_level(ob),v),response_pars(1,v));
       }
     }
     REPORT(y);
+    REPORT(w);
   }
 
   ADREPORT(response_pars);
+  ADREPORT(w_pars);
   ADREPORT(R);
-
-  REPORT(y_std);
 
   REPORT(response_pars);
   REPORT(R);
