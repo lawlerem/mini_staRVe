@@ -3,62 +3,62 @@ compile("copula_tests.cpp","-O0 -g")
 dyn.load(dynlib("copula_tests"))
 
 nv<- 2
-nl<- 5
-nperl<- 10
-nob<- nl*nperl
+nt<- 15
+npert<- 3
+nob<- nt*npert
 
 simdat<- list(
   y = matrix(0,nrow=nob,ncol=nv),
-  y_level = rep(seq(nl)-1,each=nperl)
+  yt = rep(seq(nt)-1,each=npert)
 )
 simpar<- list(
-  w = matrix(0,nrow=nl,ncol=nv),
+  w = matrix(0,nrow=nt,ncol=nv),
   working_response_pars = cbind(
     c(5,log(3)),
     c(5,log(2))
   ),
   working_w_pars = cbind(
-    c(log(20)),
-    c(log(20))
+    c(log(20),qlogis(0.5*c((0.7)+1))),
+    c(log(10),qlogis(0.5*c((-0.7)+1)))
   ),
   logit_rho = qlogis(0.5*(c(-0.8)+1))
+)
+simmap<- list(
+  working_response_pars=factor(c(1,2,1,4))
 )
 
 simobj<- MakeADFun(
   data = simdat,
   para = simpar,
   random = "w",
-  map = list(
-    working_response_pars=factor(c(1,2,1,4))
-  ),
+  map = simmap,
   DLL = "copula_tests",
   silent = TRUE
 )
 
 sim<- simobj$simulate()
-plot(as.data.frame(sim$y))
-cor(as.data.frame(sim$y))
+par(mfrow=c(2,1))
+  plot.ts(sim$y[,1])
+  plot.ts(sim$y[,2])
 
 fitobj<- MakeADFun(
   data = list(
     y = sim$y,
-    y_level = simdat$y_level
+    yt = simdat$yt
   ),
   para = list(
-    w = matrix(0,nrow=nl,ncol=nv),
+    w = matrix(0,nrow=nt,ncol=nv),
     working_response_pars = cbind(
       c(0,0),
       c(0,0)
     ),
     working_w_pars = cbind(
-      c(0),
-      c(0)
+      c(0,0),
+      c(0,0)
     ),
     logit_rho = qlogis(0.5*(c(0)+1))
   ),
-  map = list(
-    working_response_pars=factor(c(1,2,1,4))
-  ),
+  map = simmap,
   random = "w",
   DLL = "copula_tests",
   silent = TRUE

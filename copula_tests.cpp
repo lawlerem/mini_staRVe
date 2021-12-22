@@ -41,23 +41,24 @@ matrix<Type> spd_sqrt(matrix<Type> x){
 template<class Type>
 Type objective_function<Type>::operator() () {
   DATA_MATRIX(y);
-  DATA_IVECTOR(y_level);
+  DATA_IVECTOR(yt);
 
-  PARAMETER_MATRIX(w); // [level,var]
+  PARAMETER_MATRIX(w); // [t,var]
   PARAMETER_MATRIX(working_response_pars); // [par,var]
   PARAMETER_MATRIX(working_w_pars) // [par,var]
   PARAMETER(logit_rho);
 
   int nob = y.rows(); // # of observations
   int nv = y.cols(); // # of vars
-  int nl = w.rows(); // # of levels
+  int nt = w.rows(); // # of time points
 
   matrix<Type> response_pars = working_response_pars;
   response_pars.row(1) = exp(vector<Type>(working_response_pars.row(1))); // log_sd --> sd
 
-  matrix<Type> w_std(nl,nv);
+  matrix<Type> w_std(nt,nv);
   matrix<Type> w_pars = working_w_pars;
   w_pars.row(0) = exp(vector<Type>(working_w_pars.row(0))); // log_sd --> sd
+  w_pars.row(1) = 2*invlogit(vector<Type>(working_w_pars.row(1)))-1; // logit_ar1 --> ar1
 
   Type rho = 2*invlogit(logit_rho)-1;
   matrix<Type> R(nv,nv);
@@ -74,29 +75,45 @@ Type objective_function<Type>::operator() () {
 
   for(int v=0; v<nv; v++) {
     for(int ob=0; ob<nob; ob++) {
-      nll -= dnorm(y(ob,v),response_pars(0,v)+w(y_level(ob),v),response_pars(1,v),true);
+      nll -= dnorm(y(ob,v),response_pars(0,v)+w(yt(ob),v),response_pars(1,v),true);
     }
-    for(int l=0; l<nl; l++) {
-      nll -= dnorm(w(l,v),Type(0.0),w_pars(0,v),true);
-      w_std(l,v) = (w(l,v) - Type(0.0)) / w_pars(0,v);
+    for(int t=0; t<nt; t++) {
+      Type mu, sd;
+      if( t == 0 ) {
+        mu = 0.0;
+        sd = w_pars(0,v)/sqrt(1-pow(w_pars(1,v),2));
+      } else {
+        mu = w_pars(1,v)*w(t-1,v);
+        sd = w_pars(0,v);
+      }
+      nll -= dnorm(w(t,v),mu,sd,true);
+      w_std(t,v) = (w(t,v) - mu) / sd;
     }
   }
 
-  for(int l=0; l<nl; l++) {
-    vector<Type> wrow = vector<Type>(w_std.row(l));
+  for(int t=0; t<nt; t++) {
+    vector<Type> wrow = vector<Type>(w_std.row(t));
     nll += Type(0.5)*logdetR + Type(0.5)*(wrow*vector<Type>(matrix<Type>(Q-I)*wrow)).sum();
   }
 
   SIMULATE{
-    for(int l=0; l<nl; l++) {
-      w_std.row(l) = copula.simulate();
+    for(int t=0; t<nt; t++) {
+      w_std.row(t) = copula.simulate();
     }
     for(int v=0; v<nv; v++) {
-      for(int l=0; l<nl; l++) {
-        w(l,v) = w_pars(0,v)*w_std(l,v) + Type(0.0);
+      for(int t=0; t<nt; t++) {
+        Type mu, sd;
+        if( t == 0 ) {
+          mu = 0.0;
+          sd = w_pars(0,v)/sqrt(1-pow(w_pars(1,v),2));
+        } else {
+          mu = w_pars(1,v)*w(t-1,v);
+          sd = w_pars(0,v);
+        }
+        w(t,v) = sd*w_std(t,v) + mu;
       }
       for(int ob=0; ob<nob; ob++) {
-        y(ob,v) = rnorm(response_pars(0,v)+w(y_level(ob),v),response_pars(1,v));
+        y(ob,v) = rnorm(response_pars(0,v)+w(yt(ob),v),response_pars(1,v));
       }
     }
     REPORT(y);
